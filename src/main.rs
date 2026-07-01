@@ -1,7 +1,7 @@
 #![no_std]
 #![no_main]
 
-use defmt::{info, error};
+use defmt::{error, info};
 use embassy_executor::Spawner;
 use embassy_nrf::twim::Twim;
 use embassy_nrf::{bind_interrupts, twim};
@@ -26,7 +26,7 @@ bind_interrupts!(struct Irqs {
 #[embassy_executor::main]
 async fn main(_spawner: Spawner) {
     defmt::info!("Starting firmware");
-    
+
     let peripherals = embassy_nrf::init(Default::default());
     let config = twim::Config::default();
 
@@ -41,7 +41,8 @@ async fn main(_spawner: Spawner) {
         Irqs,
         peripherals.P0_04, // SDA
         peripherals.P0_05, // SCL
-        config, tx_buf,
+        config,
+        tx_buf,
     );
 
     // Let sensor boot
@@ -55,7 +56,27 @@ async fn main(_spawner: Spawner) {
         Err(_) => error!("I2C transaction failed"),
     }
 
+    let mut buffer = [0u8; 9]; // adjust once datasheet confirmed
+
     loop {
         Timer::after(Duration::from_secs(1)).await;
+
+        // Step 1: send read command
+        if let Err(_) = i2c.write(SFA30_ADDR, &CMD_READ_VALUES).await {
+            error!("I2C write failed");
+            continue;
+        }
+
+        Timer::after(Duration::from_millis(50)).await;
+
+        // Step 2: read response
+        match i2c.read(SFA30_ADDR, &mut buffer).await {
+            Ok(_) => {
+                info!("raw bytes: {}", buffer);
+            }
+            Err(_) => {
+                error!("I2C read failed");
+            }
+        }
     }
 }
