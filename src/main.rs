@@ -11,13 +11,11 @@ use static_cell::StaticCell;
 use defmt_rtt as _;
 use panic_probe as _;
 
+mod sfa30;
+
+use sfa30::{CMD_READ_VALUES, CMD_START_CONTINUOUS, SFA30_ADDR, decode};
+
 defmt::timestamp!("{=u64:ms}", { Instant::now().as_millis() as u64 });
-
-const SFA30_ADDR: u8 = 0x5D;
-
-// Correct SFA30 commands
-const CMD_START_CONTINUOUS: [u8; 2] = [0x00, 0x06];
-const CMD_READ_VALUES: [u8; 2] = [0x03, 0x27];
 
 bind_interrupts!(struct Irqs {
     TWISPI0 => twim::InterruptHandler<embassy_nrf::peripherals::TWISPI0>;
@@ -33,9 +31,7 @@ async fn main(_spawner: Spawner) {
     static TX_BUF: StaticCell<[u8; 16]> = StaticCell::new();
     let tx_buf = TX_BUF.init([0; 16]);
 
-    // -----------------------------
     // Create TWIM driver
-    // -----------------------------
     let mut i2c = Twim::new(
         peripherals.TWISPI0,
         Irqs,
@@ -48,9 +44,7 @@ async fn main(_spawner: Spawner) {
     // Let sensor boot
     Timer::after(Duration::from_millis(500)).await;
 
-    // -----------------------------
     // Start continuous measurement
-    // -----------------------------
     match i2c.write(SFA30_ADDR, &CMD_START_CONTINUOUS).await {
         Ok(_) => info!("SFA30 measurement started"),
         Err(_) => error!("I2C transaction failed"),
@@ -71,12 +65,14 @@ async fn main(_spawner: Spawner) {
 
         // Step 2: read response
         match i2c.read(SFA30_ADDR, &mut buffer).await {
-            Ok(_) => {
-                info!("raw bytes: {}", buffer);
-            }
-            Err(_) => {
-                error!("I2C read failed");
-            }
+            Ok(_) => match decode(&buffer) {
+                Ok(reading) => info!(
+                    "HCHO: {} ppb, RH: {} %, Temp: {} C",
+                    reading.hcho_ppb, reading.humidity_percent, reading.temp_celsius
+                ),
+                Err(e) => error!("Decode failed: {}", e),
+            },
+            Err(_) => error!("I2C read failed"),
         }
     }
 }
