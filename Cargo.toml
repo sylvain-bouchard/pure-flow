@@ -1,0 +1,27 @@
+[package]
+edition = "2024"
+name = "nrf52840-sfa30"
+version = "0.1.0"
+license = "MIT OR Apache-2.0"
+publish = false
+
+[dependencies]
+embassy-executor = { version = "0.10", features = ["executor-thread", "platform-cortex-m", "defmt"] }
+embassy-nrf = { version = "0.10", features = ["nrf52840", "gpiote", "time-driver-rtc1", "defmt"] }
+embassy-time = { version = "0.5", features = ["tick-hz-32_768", "defmt"] }
+
+cortex-m = { version = "0.7", features = ["critical-section-single-core"] }
+cortex-m-rt = "0.7"
+
+defmt = "1"
+defmt-rtt = "1"
+panic-probe = { version = "1", features = ["print-defmt"] }
+static_cell = "2.1.1"
+
+[profile.release]
+debug = 2
+
+[package.metadata.embassy]
+build = [
+  { target = "thumbv7em-none-eabi", artifact-dir = "out/examples/nrf52840" }
+]
