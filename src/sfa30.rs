@@ -5,6 +5,7 @@ pub const SFA30_ADDR: u8 = 0x5D;
 pub const CMD_START_CONTINUOUS: [u8; 2] = [0x00, 0x06];
 pub const CMD_READ_VALUES: [u8; 2] = [0x03, 0x27];
 
+#[derive(Clone, Copy)]
 pub struct SensorData {
     pub hcho_ppb: f32,
     pub humidity_percent: f32,
