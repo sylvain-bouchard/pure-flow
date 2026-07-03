@@ -1,6 +1,7 @@
 #![no_std]
 #![no_main]
 
+use core::future::pending;
 use defmt::{error, info};
 use embassy_executor::Spawner;
 use embassy_nrf::twim::Twim;
@@ -13,7 +14,12 @@ use panic_probe as _;
 
 mod sfa30;
 
-use sfa30::{CMD_READ_VALUES, CMD_START_CONTINUOUS, SFA30_ADDR, decode};
+use sfa30::{CMD_READ_VALUES, CMD_START_CONTINUOUS, SFA30_ADDR, SensorData, decode};
+
+use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
+use embassy_sync::channel::Channel;
+
+static SENSOR_CHANNEL: Channel<CriticalSectionRawMutex, SensorData, 4> = Channel::new();
 
 defmt::timestamp!("{=u64:ms}", { Instant::now().as_millis() as u64 });
 
@@ -22,7 +28,7 @@ bind_interrupts!(struct Irqs {
 });
 
 #[embassy_executor::main]
-async fn main(_spawner: Spawner) {
+async fn main(spawner: Spawner) {
     defmt::info!("Starting firmware");
 
     let peripherals = embassy_nrf::init(Default::default());
@@ -32,7 +38,7 @@ async fn main(_spawner: Spawner) {
     let tx_buf = TX_BUF.init([0; 16]);
 
     // Create TWIM driver
-    let mut i2c = Twim::new(
+    let i2c = Twim::new(
         peripherals.TWISPI0,
         Irqs,
         peripherals.P0_04, // SDA
@@ -41,7 +47,14 @@ async fn main(_spawner: Spawner) {
         tx_buf,
     );
 
-    // Let sensor boot
+    spawner.spawn(sensor_reading_task(i2c).unwrap());
+    spawner.spawn(ble_transmission_task().unwrap());
+
+    pending::<()>().await;
+}
+
+#[embassy_executor::task]
+async fn sensor_reading_task(mut i2c: Twim<'static>) {
     Timer::after(Duration::from_millis(500)).await;
 
     // Start continuous measurement
@@ -55,24 +68,48 @@ async fn main(_spawner: Spawner) {
     loop {
         Timer::after(Duration::from_secs(1)).await;
 
-        // Step 1: send read command
-        if let Err(_) = i2c.write(SFA30_ADDR, &CMD_READ_VALUES).await {
+        if i2c.write(SFA30_ADDR, &CMD_READ_VALUES).await.is_err() {
             error!("I2C write failed");
             continue;
         }
 
         Timer::after(Duration::from_millis(50)).await;
 
-        // Step 2: read response
         match i2c.read(SFA30_ADDR, &mut buffer).await {
             Ok(_) => match decode(&buffer) {
-                Ok(reading) => info!(
-                    "HCHO: {} ppb, RH: {} %, Temp: {} C",
-                    reading.hcho_ppb, reading.humidity_percent, reading.temp_celsius
-                ),
-                Err(error) => error!("Decode failed: {}", error),
+                Ok(reading) => {
+                    SENSOR_CHANNEL.send(reading).await;
+                }
+                Err(error) => {
+                    error!("Decode failed: {}", error);
+                }
             },
-            Err(_) => error!("I2C read failed"),
+            Err(_) => {
+                error!("I2C read failed");
+            }
         }
+    }
+}
+
+#[embassy_executor::task]
+async fn ble_transmission_task() {
+    loop {
+        // Wait for the latest sensor value
+        let data = SENSOR_CHANNEL.receive().await;
+
+        // Log for now (replace later with BLE advertising)
+        defmt::info!(
+            "BLE TX -> HCHO: {} ppb | RH: {} % | Temp: {} °C",
+            data.hcho_ppb,
+            data.humidity_percent,
+            data.temp_celsius
+        );
+
+        // TODO: replace this with actual BLE update:
+        // - advertisement payload update
+        // - GATT characteristic notify
+        // - or Nordic UART service send
+
+        Timer::after(embassy_time::Duration::from_millis(100)).await;
     }
 }
