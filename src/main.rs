@@ -26,7 +26,7 @@ async fn main(_spawner: Spawner) {
     defmt::info!("Starting firmware");
 
     let peripherals = embassy_nrf::init(Default::default());
-    let config = twim::Config::default();
+    let twim_config = twim::Config::default();
 
     static TX_BUF: StaticCell<[u8; 16]> = StaticCell::new();
     let tx_buf = TX_BUF.init([0; 16]);
@@ -37,7 +37,7 @@ async fn main(_spawner: Spawner) {
         Irqs,
         peripherals.P0_04, // SDA
         peripherals.P0_05, // SCL
-        config,
+        twim_config,
         tx_buf,
     );
 
@@ -50,7 +50,7 @@ async fn main(_spawner: Spawner) {
         Err(_) => error!("I2C transaction failed"),
     }
 
-    let mut buffer = [0u8; 9]; // adjust once datasheet confirmed
+    let mut buffer = [0u8; 9];
 
     loop {
         Timer::after(Duration::from_secs(1)).await;
@@ -70,7 +70,7 @@ async fn main(_spawner: Spawner) {
                     "HCHO: {} ppb, RH: {} %, Temp: {} C",
                     reading.hcho_ppb, reading.humidity_percent, reading.temp_celsius
                 ),
-                Err(e) => error!("Decode failed: {}", e),
+                Err(error) => error!("Decode failed: {}", error),
             },
             Err(_) => error!("I2C read failed"),
         }

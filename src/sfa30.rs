@@ -5,7 +5,7 @@ pub const SFA30_ADDR: u8 = 0x5D;
 pub const CMD_START_CONTINUOUS: [u8; 2] = [0x00, 0x06];
 pub const CMD_READ_VALUES: [u8; 2] = [0x03, 0x27];
 
-pub struct Reading {
+pub struct SensorData {
     pub hcho_ppb: f32,
     pub humidity_percent: f32,
     pub temp_celsius: f32,
@@ -26,7 +26,7 @@ fn crc8(data: [u8; 2]) -> u8 {
     crc
 }
 
-pub fn decode(buffer: &[u8; 9]) -> Result<Reading, &'static str> {
+pub fn decode(buffer: &[u8; 9]) -> Result<SensorData, &'static str> {
     let hcho_bytes = [buffer[0], buffer[1]];
     let rh_bytes = [buffer[3], buffer[4]];
     let temp_bytes = [buffer[6], buffer[7]];
@@ -45,7 +45,7 @@ pub fn decode(buffer: &[u8; 9]) -> Result<Reading, &'static str> {
     let rh_raw = i16::from_be_bytes(rh_bytes);
     let temp_raw = i16::from_be_bytes(temp_bytes);
 
-    Ok(Reading {
+    Ok(SensorData {
         hcho_ppb: hcho_raw as f32 / 5.0,
         humidity_percent: rh_raw as f32 / 100.0,
         temp_celsius: temp_raw as f32 / 200.0,
