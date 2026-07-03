@@ -9,6 +9,7 @@ publish = false
 embassy-executor = { version = "0.10", features = ["executor-thread", "platform-cortex-m", "defmt"] }
 embassy-nrf = { version = "0.10", features = ["nrf52840", "gpiote", "time-driver-rtc1", "defmt"] }
 embassy-time = { version = "0.5", features = ["tick-hz-32_768", "defmt"] }
+embassy-sync = { version = "0.8.0", features = ["defmt"] }
 
 cortex-m = { version = "0.7", features = ["critical-section-single-core"] }
 cortex-m-rt = "0.7"
