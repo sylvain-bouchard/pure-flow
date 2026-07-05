@@ -26,10 +26,10 @@ impl From<SensorData> for SensorPacket {
 
 impl SensorPacket {
     pub fn encode(&self) -> [u8; 6] {
-        let mut b = [0u8; 6];
-        b[0..2].copy_from_slice(&self.level.to_le_bytes());
-        b[2..4].copy_from_slice(&self.relative_humidity.to_le_bytes());
-        b[4..6].copy_from_slice(&self.temperature.to_le_bytes());
-        b
+        let mut packet_bytes = [0u8; 6];
+        packet_bytes[0..2].copy_from_slice(&self.level.to_le_bytes());
+        packet_bytes[2..4].copy_from_slice(&self.relative_humidity.to_le_bytes());
+        packet_bytes[4..6].copy_from_slice(&self.temperature.to_le_bytes());
+        packet_bytes
     }
 }
