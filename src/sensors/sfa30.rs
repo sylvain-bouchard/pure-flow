@@ -1,26 +1,12 @@
 //! Driver/decoder for the Sensirion SFA30 formaldehyde sensor.
 
 use crate::domain::sensor_data::HCOHSensorData;
+use crate::sensors::sensirion::crc8;
 
 pub const SFA30_ADDR: u8 = 0x5D;
 
 pub const CMD_START_CONTINUOUS: [u8; 2] = [0x00, 0x06];
 pub const CMD_READ_VALUES: [u8; 2] = [0x03, 0x27];
-
-fn crc8(data: [u8; 2]) -> u8 {
-    let mut crc: u8 = 0xFF;
-    for &byte in data.iter() {
-        crc ^= byte;
-        for _ in 0..8 {
-            crc = if crc & 0x80 != 0 {
-                (crc << 1) ^ 0x31
-            } else {
-                crc << 1
-            };
-        }
-    }
-    crc
-}
 
 pub fn decode(buffer: &[u8; 9]) -> Result<HCOHSensorData, &'static str> {
     let hcho_bytes = [buffer[0], buffer[1]];
