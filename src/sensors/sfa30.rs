@@ -42,7 +42,7 @@ pub fn decode(buffer: &[u8; 9]) -> Result<HCOHSensorData, &'static str> {
     let temp_raw = i16::from_be_bytes(temp_bytes);
 
     Ok(HCOHSensorData {
-        hcho_ppb: hcho_raw as f32 / 5.0,
+        hcho_ppb: hcho_raw as f32,
         humidity_percent: rh_raw as f32 / 100.0,
         temp_celsius: temp_raw as f32 / 200.0,
     })
@@ -56,7 +56,7 @@ mod tests {
     fn decodes_known_sample() {
         let buffer = [0, 55, 211, 21, 99, 112, 25, 126, 203];
         let reading = decode(&buffer).unwrap();
-        assert!((reading.hcho_ppb - 11.0).abs() < 0.01);
+        assert!((reading.hcho_ppb - 55.0).abs() < 0.01);
         assert!((reading.humidity_percent - 54.75).abs() < 0.01);
         assert!((reading.temp_celsius - 32.63).abs() < 0.01);
     }
