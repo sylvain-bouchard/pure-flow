@@ -1,25 +1,42 @@
 #![no_std]
 #![no_main]
 
+/// ===== Core / alloc-free futures =====
 use core::future::pending;
-use defmt::{error, info};
-use embassy_executor::Spawner;
-use embassy_nrf::twim::Twim;
-use embassy_nrf::{bind_interrupts, twim};
-use embassy_time::{Duration, Instant, Timer};
-use static_cell::StaticCell;
 
+/// ===== Logging =====
+use defmt::{error, info};
 use defmt_rtt as _;
 use panic_probe as _;
 
-mod sfa30;
-
-use sfa30::{CMD_READ_VALUES, CMD_START_CONTINUOUS, SFA30_ADDR, SensorData, decode};
-
+/// ===== Embassy runtime =====
+use embassy_executor::Spawner;
+use embassy_nrf::twim::Twim;
+use embassy_nrf::{bind_interrupts, twim};
 use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
 use embassy_sync::channel::Channel;
+use embassy_time::{Duration, Instant, Timer};
 
-static SENSOR_CHANNEL: Channel<CriticalSectionRawMutex, SensorData, 4> = Channel::new();
+/// ===== Utility crates =====
+use static_cell::StaticCell;
+
+/// ===== Local modules =====
+mod ble;
+mod domain;
+mod sensors;
+mod transport;
+
+/// ===== Sensor driver API =====
+use sensors::sfa30::{CMD_READ_VALUES, CMD_START_CONTINUOUS, SFA30_ADDR, decode};
+
+/// ===== Intra-crate shared types =====
+use crate::domain::sensor_data::SensorData;
+
+/// ===== Transport modules =====
+use crate::ble::advertiser::BleAdvertiser;
+use crate::transport::TelemetryTransport;
+
+pub static SENSOR_CHANNEL: Channel<CriticalSectionRawMutex, SensorData, 8> = Channel::new();
 
 defmt::timestamp!("{=u64:ms}", { Instant::now().as_millis() as u64 });
 
@@ -48,7 +65,9 @@ async fn main(spawner: Spawner) {
     );
 
     spawner.spawn(sensor_reading_task(i2c).unwrap());
-    spawner.spawn(ble_transmission_task().unwrap());
+
+    let advertiser = BleAdvertiser::new();
+    spawner.spawn(ble_transmission_task(advertiser).unwrap());
 
     pending::<()>().await;
 }
@@ -78,7 +97,7 @@ async fn sensor_reading_task(mut i2c: Twim<'static>) {
         match i2c.read(SFA30_ADDR, &mut buffer).await {
             Ok(_) => match decode(&buffer) {
                 Ok(reading) => {
-                    SENSOR_CHANNEL.send(reading).await;
+                    SENSOR_CHANNEL.send(SensorData::Hcho(reading)).await;
                 }
                 Err(error) => {
                     error!("Decode failed: {}", error);
@@ -92,24 +111,14 @@ async fn sensor_reading_task(mut i2c: Twim<'static>) {
 }
 
 #[embassy_executor::task]
-async fn ble_transmission_task() {
+pub async fn ble_transmission_task(mut advertiser: BleAdvertiser) {
+    let receiver = SENSOR_CHANNEL.receiver();
+
     loop {
-        // Wait for the latest sensor value
-        let data = SENSOR_CHANNEL.receive().await;
+        let data = receiver.receive().await;
 
-        // Log for now (replace later with BLE advertising)
-        defmt::info!(
-            "BLE TX -> HCHO: {} ppb | RH: {} % | Temp: {} °C",
-            data.hcho_ppb,
-            data.humidity_percent,
-            data.temp_celsius
-        );
-
-        // TODO: replace this with actual BLE update:
-        // - advertisement payload update
-        // - GATT characteristic notify
-        // - or Nordic UART service send
-
-        Timer::after(embassy_time::Duration::from_millis(100)).await;
+        if let Err(error) = advertiser.send(data).await {
+            defmt::error!("BLE send failed: {:?}", error);
+        }
     }
 }

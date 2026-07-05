@@ -18,6 +18,11 @@ defmt = "1"
 defmt-rtt = "1"
 panic-probe = { version = "1", features = ["print-defmt"] }
 static_cell = "2.1.1"
+trouble-host = { version = "0.7", features = [
+    "peripheral",
+    "gatt",
+    "derive",
+] }
 
 [profile.release]
 debug = 2
