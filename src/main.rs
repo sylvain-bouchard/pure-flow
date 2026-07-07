@@ -1,48 +1,80 @@
 #![no_std]
 #![no_main]
 
-/// ===== Core / alloc-free futures =====
+// -----------------------------------------------------------------------------
+// Core
+// -----------------------------------------------------------------------------
+
 use core::future::pending;
 
-/// ===== Logging =====
-use defmt::{error, info};
-use defmt_rtt as _;
-use panic_probe as _;
+// -----------------------------------------------------------------------------
+// Embassy
+// -----------------------------------------------------------------------------
 
-/// ===== Embassy runtime =====
 use embassy_executor::Spawner;
 use embassy_nrf::twim::Twim;
 use embassy_nrf::{bind_interrupts, twim};
 use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
 use embassy_sync::channel::Channel;
+use embassy_sync::mutex::Mutex;
 use embassy_time::{Duration, Instant, Timer};
 
-/// ===== Utility crates =====
+// -----------------------------------------------------------------------------
+// Logging / panic
+// -----------------------------------------------------------------------------
+
+use defmt::{error, info};
+use defmt_rtt as _;
+use panic_probe as _;
+
+// -----------------------------------------------------------------------------
+// Utilities
+// -----------------------------------------------------------------------------
+
 use static_cell::StaticCell;
 
-/// ===== Local modules =====
+// -----------------------------------------------------------------------------
+// Local modules
+// -----------------------------------------------------------------------------
+
 mod ble;
 mod domain;
+mod i2c_bus;
 mod sensors;
 mod transport;
 
-/// ===== Sensor driver API =====
-use sensors::sfa30::{CMD_READ_VALUES, CMD_START_CONTINUOUS, SFA30_ADDR, decode};
+// -----------------------------------------------------------------------------
+// Local imports
+// -----------------------------------------------------------------------------
 
-/// ===== Intra-crate shared types =====
-use crate::domain::sensor_data::SensorData;
-
-/// ===== Transport modules =====
 use crate::ble::advertiser::BleAdvertiser;
+use crate::domain::sensor_data::SensorData;
+use crate::i2c_bus::SharedI2cBus;
+use crate::sensors::scd40::Scd40;
+use crate::sensors::sfa30::Sfa30;
 use crate::transport::TelemetryTransport;
 
+// -----------------------------------------------------------------------------
+// Global resources
+// -----------------------------------------------------------------------------
+
 pub static SENSOR_CHANNEL: Channel<CriticalSectionRawMutex, SensorData, 8> = Channel::new();
+
+static I2C_BUS: StaticCell<Mutex<CriticalSectionRawMutex, Twim<'static>>> = StaticCell::new();
+
+// -----------------------------------------------------------------------------
+// Embassy configuration
+// -----------------------------------------------------------------------------
 
 defmt::timestamp!("{=u64:ms}", { Instant::now().as_millis() as u64 });
 
 bind_interrupts!(struct Irqs {
     TWISPI0 => twim::InterruptHandler<embassy_nrf::peripherals::TWISPI0>;
 });
+
+// -----------------------------------------------------------------------------
+// Tasks
+// -----------------------------------------------------------------------------
 
 #[embassy_executor::main]
 async fn main(spawner: Spawner) {
@@ -64,7 +96,13 @@ async fn main(spawner: Spawner) {
         tx_buf,
     );
 
-    spawner.spawn(sensor_reading_task(i2c).unwrap());
+    let mutex = I2C_BUS.init(Mutex::new(i2c));
+
+    let scd40_i2c = SharedI2cBus::new(mutex);
+    spawner.spawn(scd40_task(scd40_i2c).unwrap());
+
+    let sfa30_i2c = SharedI2cBus::new(mutex);
+    spawner.spawn(sfa30_task(sfa30_i2c).unwrap());
 
     let advertiser = BleAdvertiser::new();
     spawner.spawn(ble_transmission_task(advertiser).unwrap());
@@ -73,40 +111,68 @@ async fn main(spawner: Spawner) {
 }
 
 #[embassy_executor::task]
-async fn sensor_reading_task(mut i2c: Twim<'static>) {
-    Timer::after(Duration::from_millis(500)).await;
+async fn scd40_task(i2c: SharedI2cBus) {
+    let mut sensor = Scd40::new(i2c);
 
-    // Start continuous measurement
-    match i2c.write(SFA30_ADDR, &CMD_START_CONTINUOUS).await {
-        Ok(_) => info!("SFA30 measurement started"),
-        Err(_) => error!("I2C transaction failed"),
+    if let Err(error) = sensor.start().await {
+        error!("SCD40 start failed: {:?}", error);
+        return;
     }
 
-    let mut buffer = [0u8; 9];
-
     loop {
-        Timer::after(Duration::from_secs(1)).await;
-
-        if i2c.write(SFA30_ADDR, &CMD_READ_VALUES).await.is_err() {
-            error!("I2C write failed");
-            continue;
-        }
-
-        Timer::after(Duration::from_millis(50)).await;
-
-        match i2c.read(SFA30_ADDR, &mut buffer).await {
-            Ok(_) => match decode(&buffer) {
+        match sensor.data_ready().await {
+            Ok(true) => match sensor.read().await {
                 Ok(reading) => {
-                    SENSOR_CHANNEL.send(SensorData::Hcho(reading)).await;
+                    SENSOR_CHANNEL.send(SensorData::Co2(reading)).await;
                 }
-                Err(error) => {
-                    error!("Decode failed: {}", error);
-                }
+                Err(error) => error!("SCD40 read failed: {:?}", error),
             },
-            Err(_) => {
-                error!("I2C read failed");
+
+            Ok(false) => {}
+
+            Err(error) => {
+                error!("SCD40 ready check failed: {:?}", error);
             }
         }
+
+        Timer::after(Duration::from_secs(1)).await;
+    }
+}
+
+#[embassy_executor::task]
+async fn sfa30_task(i2c: SharedI2cBus) {
+    let mut sensor = Sfa30::new(i2c);
+
+    if let Err(error) = sensor.start().await {
+        error!("SFA30 start failed: {}", error);
+
+        loop {
+            Timer::after(Duration::from_secs(5)).await;
+
+            match sensor.start().await {
+                Ok(_) => {
+                    info!("SFA30 started successfully");
+                    break;
+                }
+                Err(error) => {
+                    error!("SFA30 retry failed: {}", error);
+                }
+            }
+        }
+    }
+
+    loop {
+        match sensor.read().await {
+            Ok(reading) => {
+                SENSOR_CHANNEL.send(SensorData::Hcho(reading)).await;
+            }
+
+            Err(error) => {
+                error!("SFA30 read failed: {:?}", error);
+            }
+        }
+
+        Timer::after(Duration::from_secs(1)).await;
     }
 }
 
