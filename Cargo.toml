@@ -16,6 +16,8 @@ cortex-m-rt = "0.7"
 
 defmt = "1"
 defmt-rtt = "1"
+embedded-hal-async = "1.0.0"
+embedded-hal-bus = { version = "0.3.0", features = ["async"] }
 panic-probe = { version = "1", features = ["print-defmt"] }
 static_cell = "2.1.1"
 trouble-host = { version = "0.7", features = [
