@@ -161,6 +161,8 @@ async fn sfa30_task(i2c: SharedI2cBus) {
         }
     }
 
+    Timer::after(Duration::from_secs(1)).await;
+
     loop {
         match sensor.read().await {
             Ok(reading) => {
