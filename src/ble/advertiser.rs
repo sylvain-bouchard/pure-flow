@@ -13,15 +13,30 @@ impl TelemetryTransport for BleAdvertiser {
                 "HCHO: {} ppb | Humidity: {}% | Temp: {} C",
                 reading.hcho_ppb, reading.humidity_percent, reading.temp_celsius
             ),
+
             SensorData::Co2(reading) => info!(
                 "CO2: {} ppm | Humidity: {}% | Temp: {} C",
                 reading.co2_ppm, reading.humidity_percent, reading.temp_celsius
             ),
-        }
-        let packet: SensorPacket = data.into();
-        let payload = packet.encode();
 
-        self.send_adv(&payload).await
+            SensorData::Aqi(reading) => info!(
+                "PM1.0: {} ug/m3 | PM2.5: {} ug/m3 | PM4.0: {} ug/m3 | PM10: {} ug/m3 | \
+                 VOC: {} | NOx: {} | Humidity: {}% | Temp: {} C",
+                reading.pm1_0,
+                reading.pm2_5,
+                reading.pm4_0,
+                reading.pm10,
+                reading.voc_index,
+                reading.nox_index,
+                reading.humidity_percent,
+                reading.temperature_celsius
+            ),
+        }
+
+        let packet: SensorPacket = data.into();
+        let (buffer, length) = packet.encode();
+
+        self.send_adv(&buffer[..length]).await
     }
 }
 

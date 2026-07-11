@@ -51,6 +51,7 @@ use crate::ble::advertiser::BleAdvertiser;
 use crate::domain::sensor_data::SensorData;
 use crate::i2c_bus::SharedI2cBus;
 use crate::sensors::scd40::Scd40;
+use crate::sensors::sen55::Sen55;
 use crate::sensors::sfa30::Sfa30;
 use crate::transport::TelemetryTransport;
 
@@ -103,6 +104,9 @@ async fn main(spawner: Spawner) {
 
     let sfa30_i2c = SharedI2cBus::new(mutex);
     spawner.spawn(sfa30_task(sfa30_i2c).unwrap());
+
+    let sen55_i2c = SharedI2cBus::new(mutex);
+    spawner.spawn(sen55_task(sen55_i2c).unwrap());
 
     let advertiser = BleAdvertiser::new();
     spawner.spawn(ble_transmission_task(advertiser).unwrap());
@@ -171,6 +175,30 @@ async fn sfa30_task(i2c: SharedI2cBus) {
 
             Err(error) => {
                 error!("SFA30 read failed: {:?}", error);
+            }
+        }
+
+        Timer::after(Duration::from_secs(1)).await;
+    }
+}
+
+#[embassy_executor::task]
+async fn sen55_task(i2c: SharedI2cBus) {
+    let mut sensor = Sen55::new(i2c);
+
+    if let Err(error) = sensor.start().await {
+        error!("SEN55 start failed: {:?}", error);
+        return;
+    }
+
+    loop {
+        match sensor.read().await {
+            Ok(reading) => {
+                SENSOR_CHANNEL.send(SensorData::Aqi(reading)).await;
+            }
+
+            Err(error) => {
+                error!("SEN55 read failed: {:?}", error);
             }
         }
 

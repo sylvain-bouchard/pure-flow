@@ -1,30 +1,15 @@
 use embassy_time::{Duration, Timer};
 use embedded_hal_async::i2c::I2c;
 
-use crate::sensors::sensirion::crc8;
+use crate::{domain::sensor_data::AQISensorData, sensors::sensirion::crc8};
 
 const SEN55_ADDR: u8 = 0x69;
 
+const CMD_DEVICE_RESET: [u8; 2] = [0xD3, 0x04];
 const CMD_START_MEASUREMENT: [u8; 2] = [0x00, 0x21];
-
 const CMD_STOP_MEASUREMENT: [u8; 2] = [0x01, 0x04];
-
 const CMD_READ_DATA_READY: [u8; 2] = [0x02, 0x02];
-
 const CMD_READ_MEASURED_VALUES: [u8; 2] = [0x03, 0xC4];
-
-pub struct AQISensorData {
-    pub pm1_0: f32,
-    pub pm2_5: f32,
-    pub pm4_0: f32,
-    pub pm10: f32,
-
-    pub humidity_percent: f32,
-    pub temperature_celsius: f32,
-
-    pub voc_index: f32,
-    pub nox_index: f32,
-}
 
 #[derive(Debug, Copy, Clone, defmt::Format)]
 pub enum DecodeError {
@@ -76,14 +61,16 @@ where
     /// The first measurement will become available after approximately
     /// one second.
     pub async fn start(&mut self) -> Result<(), Error<I2C::Error>> {
-        // Stop first in case measurements are already running.
-        let _ = self.stop().await;
+        // Reset sensor
+        self.send_command(&CMD_DEVICE_RESET).await?;
 
-        Timer::after(Duration::from_millis(200)).await;
+        // Reset execution time: max ~100ms
+        Timer::after(Duration::from_millis(100)).await;
 
+        // Start measurements
         self.send_command(&CMD_START_MEASUREMENT).await?;
 
-        // Give the internal fan/laser time to start.
+        // First measurement requires ~1 second
         Timer::after(Duration::from_secs(1)).await;
 
         Ok(())
