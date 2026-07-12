@@ -1,8 +1,38 @@
 #[derive(Clone, Copy)]
-pub enum SensorData {
-    Hcho(HCOHSensorData),
-    Co2(CO2SensorData),
-    Aqi(AQISensorData),
+pub struct EnvironmentData {
+    pub co2_ppm: Option<u16>,
+    pub hcho_ppb: Option<u16>,
+
+    pub pm1_0: Option<u16>,
+    pub pm2_5: Option<u16>,
+    pub pm4_0: Option<u16>,
+    pub pm10: Option<u16>,
+
+    pub voc_index: Option<u16>,
+    pub nox_index: Option<u16>,
+
+    pub temperature_celsius: Option<f32>,
+    pub humidity_percent: Option<f32>,
+}
+
+impl EnvironmentData {
+    pub const fn new() -> Self {
+        Self {
+            co2_ppm: None,
+            hcho_ppb: None,
+
+            pm1_0: None,
+            pm2_5: None,
+            pm4_0: None,
+            pm10: None,
+
+            voc_index: None,
+            nox_index: None,
+
+            humidity_percent: None,
+            temperature_celsius: None,
+        }
+    }
 }
 
 #[derive(Clone, Copy)]

@@ -15,7 +15,6 @@ use embassy_executor::Spawner;
 use embassy_nrf::twim::Twim;
 use embassy_nrf::{bind_interrupts, twim};
 use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
-use embassy_sync::channel::Channel;
 use embassy_sync::mutex::Mutex;
 use embassy_time::{Duration, Instant, Timer};
 
@@ -48,7 +47,7 @@ mod transport;
 // -----------------------------------------------------------------------------
 
 use crate::ble::advertiser::BleAdvertiser;
-use crate::domain::sensor_data::SensorData;
+use crate::domain::sensor_data::EnvironmentData;
 use crate::i2c_bus::SharedI2cBus;
 use crate::sensors::scd40::Scd40;
 use crate::sensors::sen55::Sen55;
@@ -59,8 +58,8 @@ use crate::transport::TelemetryTransport;
 // Global resources
 // -----------------------------------------------------------------------------
 
-pub static SENSOR_CHANNEL: Channel<CriticalSectionRawMutex, SensorData, 8> = Channel::new();
-
+pub static ENVIRONMENT: Mutex<CriticalSectionRawMutex, EnvironmentData> =
+    Mutex::new(EnvironmentData::new());
 static I2C_BUS: StaticCell<Mutex<CriticalSectionRawMutex, Twim<'static>>> = StaticCell::new();
 
 // -----------------------------------------------------------------------------
@@ -127,7 +126,13 @@ async fn scd40_task(i2c: SharedI2cBus) {
         match sensor.data_ready().await {
             Ok(true) => match sensor.read().await {
                 Ok(reading) => {
-                    SENSOR_CHANNEL.send(SensorData::Co2(reading)).await;
+                    let mut env = ENVIRONMENT.lock().await;
+
+                    env.co2_ppm = Some(reading.co2_ppm);
+
+                    // SCD40 is your temperature/humidity reference
+                    env.temperature_celsius = Some(reading.temp_celsius);
+                    env.humidity_percent = Some(reading.humidity_percent);
                 }
                 Err(error) => error!("SCD40 read failed: {:?}", error),
             },
@@ -170,7 +175,9 @@ async fn sfa30_task(i2c: SharedI2cBus) {
     loop {
         match sensor.read().await {
             Ok(reading) => {
-                SENSOR_CHANNEL.send(SensorData::Hcho(reading)).await;
+                let mut env = ENVIRONMENT.lock().await;
+
+                env.hcho_ppb = Some(reading.hcho_ppb as u16);
             }
 
             Err(error) => {
@@ -194,7 +201,15 @@ async fn sen55_task(i2c: SharedI2cBus) {
     loop {
         match sensor.read().await {
             Ok(reading) => {
-                SENSOR_CHANNEL.send(SensorData::Aqi(reading)).await;
+                let mut env = ENVIRONMENT.lock().await;
+
+                env.pm1_0 = Some(reading.pm1_0 as u16);
+                env.pm2_5 = Some(reading.pm2_5 as u16);
+                env.pm4_0 = Some(reading.pm4_0 as u16);
+                env.pm10 = Some(reading.pm10 as u16);
+
+                env.voc_index = Some(reading.voc_index as u16);
+                env.nox_index = Some(reading.nox_index as u16);
             }
 
             Err(error) => {
@@ -208,13 +223,13 @@ async fn sen55_task(i2c: SharedI2cBus) {
 
 #[embassy_executor::task]
 pub async fn ble_transmission_task(mut advertiser: BleAdvertiser) {
-    let receiver = SENSOR_CHANNEL.receiver();
-
     loop {
-        let data = receiver.receive().await;
+        Timer::after(Duration::from_secs(5)).await;
 
-        if let Err(error) = advertiser.send(data).await {
-            defmt::error!("BLE send failed: {:?}", error);
+        let env = ENVIRONMENT.lock().await;
+
+        if let Err(error) = advertiser.send(env.clone()).await {
+            error!("BLE send failed: {:?}", error);
         }
     }
 }

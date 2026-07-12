@@ -1,4 +1,4 @@
-use crate::domain::sensor_data::SensorData;
+use crate::domain::sensor_data::EnvironmentData;
 
 #[derive(Debug, defmt::Format)]
 pub enum TransportError {
@@ -7,5 +7,5 @@ pub enum TransportError {
 }
 
 pub trait TelemetryTransport {
-    async fn send(&mut self, data: SensorData) -> Result<(), TransportError>;
+    async fn send(&mut self, data: EnvironmentData) -> Result<(), TransportError>;
 }
