@@ -1,4 +1,4 @@
-# pure-flow
+# Pure Flow
 
 A production-grade, asynchronous Rust firmware implementation for smart environmental monitoring and ventilation control. This project leverages the Embassy framework on the Nordic nRF52840 architecture to drive multi-sensor data fusion and intelligent air-exchange efficiency.
 
