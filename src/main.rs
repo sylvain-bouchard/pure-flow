@@ -4,13 +4,11 @@
 // -----------------------------------------------------------------------------
 // Core
 // -----------------------------------------------------------------------------
-
 use core::future::pending;
 
 // -----------------------------------------------------------------------------
 // Embassy
 // -----------------------------------------------------------------------------
-
 use embassy_executor::Spawner;
 use embassy_nrf::twim::Twim;
 use embassy_nrf::{bind_interrupts, twim};
@@ -21,7 +19,6 @@ use embassy_time::{Duration, Instant, Timer};
 // -----------------------------------------------------------------------------
 // Logging / panic
 // -----------------------------------------------------------------------------
-
 use defmt::{error, info};
 use defmt_rtt as _;
 use panic_probe as _;
@@ -29,13 +26,11 @@ use panic_probe as _;
 // -----------------------------------------------------------------------------
 // Utilities
 // -----------------------------------------------------------------------------
-
 use static_cell::StaticCell;
 
 // -----------------------------------------------------------------------------
 // Local modules
 // -----------------------------------------------------------------------------
-
 mod ble;
 mod domain;
 mod i2c_bus;
@@ -45,7 +40,6 @@ mod transport;
 // -----------------------------------------------------------------------------
 // Local imports
 // -----------------------------------------------------------------------------
-
 use crate::ble::advertiser::BleAdvertiser;
 use crate::domain::sensor_data::EnvironmentData;
 use crate::i2c_bus::SharedI2cBus;
@@ -57,7 +51,6 @@ use crate::transport::TelemetryTransport;
 // -----------------------------------------------------------------------------
 // Global resources
 // -----------------------------------------------------------------------------
-
 pub static ENVIRONMENT: Mutex<CriticalSectionRawMutex, EnvironmentData> =
     Mutex::new(EnvironmentData::new());
 static I2C_BUS: StaticCell<Mutex<CriticalSectionRawMutex, Twim<'static>>> = StaticCell::new();
@@ -65,7 +58,6 @@ static I2C_BUS: StaticCell<Mutex<CriticalSectionRawMutex, Twim<'static>>> = Stat
 // -----------------------------------------------------------------------------
 // Embassy configuration
 // -----------------------------------------------------------------------------
-
 defmt::timestamp!("{=u64:ms}", { Instant::now().as_millis() as u64 });
 
 bind_interrupts!(struct Irqs {
