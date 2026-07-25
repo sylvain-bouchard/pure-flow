@@ -73,25 +73,39 @@ bind_interrupts!(struct Irqs {
 
 #[embassy_executor::main]
 async fn main(spawner: Spawner) {
-    defmt::info!("Starting firmware");
+    info!("Starting firmware");
 
     let peripherals = embassy_nrf::init(Default::default());
+
+    let BoardPeripherals {
+        radio,
+        twim,
+        sda,
+        scl,
+    } = split_peripherals(peripherals);
+
+    // -------------------------------------------------------------------------
+    // Initialise the BLE stack
+    // -------------------------------------------------------------------------
+
+    let soft_device_controller = setup_radio_hardware(radio, spawner).await;
+
+    // -------------------------------------------------------------------------
+    // Initialise I2C
+    // -------------------------------------------------------------------------
+
     let twim_config = twim::Config::default();
 
     static TX_BUF: StaticCell<[u8; 16]> = StaticCell::new();
     let tx_buf = TX_BUF.init([0; 16]);
 
-    // Create TWIM driver
-    let i2c = Twim::new(
-        peripherals.TWISPI0,
-        Irqs,
-        peripherals.P0_04, // SDA
-        peripherals.P0_05, // SCL
-        twim_config,
-        tx_buf,
-    );
+    let i2c = Twim::new(twim, Irqs, sda, scl, twim_config, tx_buf);
 
     let mutex = I2C_BUS.init(Mutex::new(i2c));
+
+    // -------------------------------------------------------------------------
+    // Start sensor tasks
+    // -------------------------------------------------------------------------
 
     let scd40_i2c = SharedI2cBus::new(mutex);
     spawner.spawn(scd40_task(scd40_i2c).unwrap());
@@ -102,8 +116,16 @@ async fn main(spawner: Spawner) {
     let sen55_i2c = SharedI2cBus::new(mutex);
     spawner.spawn(sen55_task(sen55_i2c).unwrap());
 
-    let advertiser = BleAdvertiser::new();
+    // -------------------------------------------------------------------------
+    // Start BLE transmission
+    // -------------------------------------------------------------------------
+
+    let advertiser = BleAdvertiser::new(soft_device_controller, spawner);
     spawner.spawn(ble_transmission_task(advertiser).unwrap());
+
+    // -------------------------------------------------------------------------
+    // Keep main alive forever
+    // -------------------------------------------------------------------------
 
     pending::<()>().await;
 }
