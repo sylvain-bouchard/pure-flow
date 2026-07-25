@@ -32,6 +32,7 @@ use static_cell::StaticCell;
 // Local modules
 // -----------------------------------------------------------------------------
 mod ble;
+mod board;
 mod domain;
 mod i2c_bus;
 mod sensors;
@@ -41,6 +42,8 @@ mod transport;
 // Local imports
 // -----------------------------------------------------------------------------
 use crate::ble::advertiser::BleAdvertiser;
+use crate::ble::nordic::setup_radio_hardware;
+use crate::board::{BoardPeripherals, split_peripherals};
 use crate::domain::sensor_data::EnvironmentData;
 use crate::i2c_bus::SharedI2cBus;
 use crate::sensors::scd40::Scd40;
