@@ -9,7 +9,7 @@ publish = false
 embassy-executor = { version = "0.10", features = ["executor-thread", "platform-cortex-m", "defmt"] }
 embassy-nrf = { version = "0.11", features = ["nrf52840", "gpiote", "time-driver-rtc1", "defmt"] }
 embassy-time = { version = "0.5", features = ["tick-hz-32_768", "defmt"] }
-embassy-sync = { version = "0.8.0", features = ["defmt"] }
+embassy-sync = { version = "0.8", features = ["defmt"] }
 
 cortex-m = { version = "0.7", features = ["critical-section-single-core"] }
 cortex-m-rt = "0.7"
@@ -18,13 +18,10 @@ defmt = "1"
 defmt-rtt = "1"
 embedded-hal-async = "1.0.0"
 embedded-hal-bus = { version = "0.3.0", features = ["async"] }
+nrf-sdc = { version = "0.4.0", features = ["nrf52840", "defmt", "peripheral", "central"] }
 panic-probe = { version = "1", features = ["print-defmt"] }
 static_cell = "2.1.1"
-trouble-host = { version = "0.7", features = [
-    "peripheral",
-    "gatt",
-    "derive",
-] }
+trouble-host = { version = "0.7", features = ["peripheral"] }
 
 [profile.release]
 debug = 2
@@ -33,3 +30,12 @@ debug = 2
 build = [
   { target = "thumbv7em-none-eabi", artifact-dir = "out/examples/nrf52840" }
 ]
+
+[patch.crates-io]
+nrf-sdc      = { path = "../nrf-sdc/nrf-sdc" }
+nrf-mpsl     = { path = "../nrf-sdc/nrf-mpsl" }
+nrf-mpsl-sys = { path = "../nrf-sdc/nrf-mpsl-sys" }
+nrf-sdc-sys  = { path = "../nrf-sdc/nrf-sdc-sys" }
+
+# Git override for Trouble to force it to use a modern Embassy stack
+trouble-host = { git = "https://github.com/embassy-rs/trouble", branch = "main" }
