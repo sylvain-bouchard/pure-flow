@@ -73,7 +73,7 @@ bind_interrupts!(struct Irqs {
 
 #[embassy_executor::main]
 async fn main(spawner: Spawner) {
-    info!("Starting firmware");
+    info!("Starting firmware...");
 
     let peripherals = embassy_nrf::init(Default::default());
 
@@ -88,7 +88,16 @@ async fn main(spawner: Spawner) {
     // Initialise the BLE stack
     // -------------------------------------------------------------------------
 
-    let soft_device_controller = setup_radio_hardware(radio, spawner).await;
+    let controller = match setup_radio_hardware(radio, spawner).await {
+        Ok(controller) => {
+            info!("BLE stack initialised successfully");
+            controller
+        }
+        Err(error) => {
+            error!("BLE stack initialisation failed: {:?}", error);
+            return;
+        }
+    };
 
     // -------------------------------------------------------------------------
     // Initialise I2C
@@ -120,7 +129,16 @@ async fn main(spawner: Spawner) {
     // Start BLE transmission
     // -------------------------------------------------------------------------
 
-    let advertiser = BleAdvertiser::new(soft_device_controller, spawner);
+    let advertiser = match BleAdvertiser::new(controller, spawner) {
+        Ok(advertiser) => {
+            info!("BLE advertiser initialised successfully");
+            advertiser
+        }
+        Err(error) => {
+            error!("BLE advertiser initialisation failed: {:?}", error);
+            return;
+        }
+    };
     spawner.spawn(ble_transmission_task(advertiser).unwrap());
 
     // -------------------------------------------------------------------------

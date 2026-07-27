@@ -1,4 +1,3 @@
-use defmt::unwrap;
 use embassy_executor::Spawner;
 use embassy_nrf::{Peri, mode::Async, peripherals::*};
 use embassy_nrf::{bind_interrupts, rng};
@@ -19,6 +18,19 @@ bind_interrupts!(struct Irqs {
     TIMER0 => nrf_sdc::mpsl::HighPrioInterruptHandler;
     RTC0 => nrf_sdc::mpsl::HighPrioInterruptHandler;
 });
+
+#[derive(Debug, defmt::Format)]
+pub enum RadioSetupError {
+    /// Holds the internal error returned by the MPSL crate
+    Mpsl(mpsl::Error),
+
+    /// Holds the internal error returned by the SDC builder crate
+    Sdc(nrf_sdc::Error),
+
+    /// Represents a failure to spawn the Embassy runtime task
+    /// (e.g., if the task pool size or executor queue is completely full)
+    SpawnTask,
+}
 
 pub struct RadioPeripherals {
     pub rng: Peri<'static, RNG>,
@@ -68,7 +80,7 @@ async fn mpsl_task(mpsl: &'static MultiprotocolServiceLayer<'static>) -> ! {
 pub async fn setup_radio_hardware(
     peripherals: RadioPeripherals,
     spawner: Spawner,
-) -> nrf_sdc::SoftdeviceController<'static> {
+) -> Result<nrf_sdc::SoftdeviceController<'static>, RadioSetupError> {
     // 1. Setup MPSL
     let mpsl_p = mpsl::Peripherals::new(
         peripherals.rtc0,
@@ -87,12 +99,15 @@ pub async fn setup_radio_hardware(
     };
 
     static MPSL: StaticCell<MultiprotocolServiceLayer> = StaticCell::new();
-    let mpsl = MPSL.init(defmt::unwrap!(mpsl::MultiprotocolServiceLayer::new(
-        mpsl_p, Irqs, lfclk_cfg
-    )));
-    spawner.spawn(unwrap!(mpsl_task(&*mpsl)));
 
-    // 2. Setup SDC
+    // Initialize MPSL
+    let mpsl_instance = mpsl::MultiprotocolServiceLayer::new(mpsl_p, Irqs, lfclk_cfg)
+        .map_err(|error| RadioSetupError::Mpsl(error))?;
+    let mpsl = MPSL.init(mpsl_instance);
+    let token = mpsl_task(&*mpsl).map_err(|_| RadioSetupError::SpawnTask)?;
+    spawner.spawn(token);
+
+    // Setup SDC (SoftDevice Controller)
     let sdc_p = sdc::Peripherals::new(
         peripherals.ppi_ch17,
         peripherals.ppi_ch18,
@@ -114,7 +129,7 @@ pub async fn setup_radio_hardware(
     static SDC_MEM: StaticCell<sdc::Mem<16384>> = StaticCell::new();
     let sdc_mem = SDC_MEM.init(sdc::Mem::<16384>::new());
 
-    let sdc = unwrap!(build_sdc(sdc_p, rng, mpsl, sdc_mem));
+    let sdc = build_sdc(sdc_p, rng, mpsl, sdc_mem).map_err(|error| RadioSetupError::Sdc(error))?;
 
-    sdc
+    Ok(sdc)
 }

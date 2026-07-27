@@ -13,7 +13,7 @@ use trouble_host::prelude::*;
 // -----------------------------------------------------------------------------
 // Logging / panic
 // -----------------------------------------------------------------------------
-use defmt::{info, unwrap};
+use defmt::info;
 
 const CONNECTIONS_MAX: usize = 1;
 const L2CAP_CHANNELS_MAX: usize = 1;
@@ -24,12 +24,20 @@ static RESOURCES: StaticCell<
 static STACK: StaticCell<Stack<'static, SoftdeviceController<'static>, DefaultPacketPool>> =
     StaticCell::new();
 
+#[derive(Debug, defmt::Format)]
+pub enum BleAdvertiserError {
+    SpawnBackgroundTask,
+}
+
 pub struct BleAdvertiser {
     peripheral: Peripheral<'static, SoftdeviceController<'static>, DefaultPacketPool>,
 }
 
 impl BleAdvertiser {
-    pub fn new(controller: SoftdeviceController<'static>, spawner: Spawner) -> Self {
+    pub fn new(
+        controller: SoftdeviceController<'static>,
+        spawner: Spawner,
+    ) -> Result<Self, BleAdvertiserError> {
         let resources = RESOURCES.init(HostResources::new());
         let address = Address::random([0xff, 0xee, 0xdd, 0xcc, 0xbb, 0xaa]);
 
@@ -40,11 +48,13 @@ impl BleAdvertiser {
         let stack: &'static mut Stack<'static, SoftdeviceController<'static>, DefaultPacketPool> =
             STACK.init(stack);
 
-        spawner.spawn(unwrap!(trouble_background_task(stack.runner())));
+        let token = trouble_background_task(stack.runner())
+            .map_err(|_| BleAdvertiserError::SpawnBackgroundTask)?;
+        spawner.spawn(token);
 
-        Self {
+        Ok(Self {
             peripheral: stack.peripheral(),
-        }
+        })
     }
 
     async fn send_adv(&mut self, payload: &[u8]) -> Result<(), TransportError> {
