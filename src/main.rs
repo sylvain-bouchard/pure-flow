@@ -67,6 +67,20 @@ bind_interrupts!(struct Irqs {
     TWISPI0 => twim::InterruptHandler<embassy_nrf::peripherals::TWISPI0>;
 });
 
+macro_rules! spawn_or_return {
+    ($spawner:expr, $task:expr, $message:literal) => {
+        let token = match $task {
+            Ok(token) => token,
+            Err(_) => {
+                error!($message);
+                return;
+            }
+        };
+
+        $spawner.spawn(token);
+    };
+}
+
 // -----------------------------------------------------------------------------
 // Tasks
 // -----------------------------------------------------------------------------
@@ -117,13 +131,25 @@ async fn main(spawner: Spawner) {
     // -------------------------------------------------------------------------
 
     let scd40_i2c = SharedI2cBus::new(mutex);
-    spawner.spawn(scd40_task(scd40_i2c).unwrap());
+    spawn_or_return!(
+        spawner,
+        scd40_task(scd40_i2c),
+        "Failed to create SCD40 task"
+    );
 
     let sfa30_i2c = SharedI2cBus::new(mutex);
-    spawner.spawn(sfa30_task(sfa30_i2c).unwrap());
+    spawn_or_return!(
+        spawner,
+        sfa30_task(sfa30_i2c),
+        "Failed to create SFA30 task"
+    );
 
     let sen55_i2c = SharedI2cBus::new(mutex);
-    spawner.spawn(sen55_task(sen55_i2c).unwrap());
+    spawn_or_return!(
+        spawner,
+        sen55_task(sen55_i2c),
+        "Failed to create SEN55 task"
+    );
 
     // -------------------------------------------------------------------------
     // Start BLE transmission
